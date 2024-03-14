@@ -1,0 +1,241 @@
+Program.Sub.ScreenSU.Start
+Gui.f_Warning..Create
+Gui.f_Warning..Caption("Warning")
+Gui.f_Warning..Size(3915,2775)
+Gui.f_Warning..MinX(0)
+Gui.f_Warning..MinY(0)
+Gui.f_Warning..Position(0,0)
+Gui.f_Warning..BackColor(-2147483633)
+Gui.f_Warning..MousePointer(0)
+Gui.f_Warning..MaxButton(False)
+Gui.f_Warning..MinButton(False)
+Gui.f_Warning..Event(UnLoad,f_Warning_UnLoad)
+Gui.f_Warning..ControlBox(False)
+Gui.f_Warning..Moveable(False)
+Gui.f_Warning..Sizeable(False)
+Gui.f_Warning.cmdOK.Create(Button)
+Gui.f_Warning.cmdOK.Size(855,375)
+Gui.f_Warning.cmdOK.Position(1530,1665)
+Gui.f_Warning.cmdOK.Caption("OK")
+Gui.f_Warning.cmdOK.Event(Click,cmdOK_Click)
+Gui.f_Warning.lbl1.Create(Label,"WARNING: The part you selected is a slow moving part!",True,1875,1200,0,1650,540,True,0,"Arial",8,-2147483633,0)
+Gui.f_Warning.lbl1.Anchor(7)
+Gui.f_Warning.pic1.Create(PictureBox)
+Gui.f_Warning.pic1.Size(1215,1065)
+Gui.f_Warning.pic1.Position(330,270)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+	v.Global.sPart.Declare(string)
+	v.Global.sRev.Declare(string)
+	v.Global.sLocn.Declare(string)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Author: Daniel Duncan
+'Customer: Haskris
+'Program Name: Custom Messaging System for Parts
+'Date Started: 8/12/2019
+'Description: This project is twofold: 1.) It allows the part's status (stored in InvMstr.Vendor_Sort) and code (InvMstr.Info_1) to be set from an ECN for that part, and 2.) It notifies the user via popup if a part with status "Slow Moving" is added to a line in a SO, PO, Quote, or BOM.
+'Quote: 11551-0
+'GAP: 5633
+
+	f.Intrinsic.Control.Try
+		F.Intrinsic.Control.CallSub(loadPictureLogo)
+		
+		f.Intrinsic.Control.SelectCase(v.Caller.Hook)
+			f.Intrinsic.Control.Case(16480)
+				'16480 - BOM line Post Save
+				v.Global.sPart.Set(v.Passed.000002)
+				v.Global.sRev.Set(v.passed.000074)
+				v.Global.sLocn.Set("")
+				f.Intrinsic.Control.CallSub(VerifyPartStatus, "Screen", "BOM")
+			f.Intrinsic.Control.Case(12230)			
+				'12230 - SO line Post Save
+				v.Global.sPart.Set(v.Passed.000052)
+				v.Global.sRev.Set(v.passed.000053)
+				v.Global.sLocn.Set(v.Passed.000054)
+				f.Intrinsic.Control.CallSub(VerifyPartStatus, "Screen", "SO")
+			f.Intrinsic.Control.Case(10532)
+				'10532 - Quote line Post Save
+				v.Global.sPart.Set(v.Passed.000052)
+				v.Global.sRev.Set(v.passed.000053)
+				v.Global.sLocn.Set(v.Passed.000054)
+				f.Intrinsic.Control.CallSub(VerifyPartStatus, "Screen", "QTE")
+			f.Intrinsic.Control.Case(17060)
+				'17060 - PO line Pre Save
+				v.Global.sPart.Set(v.Passed.000008)
+				v.Global.sRev.Set(v.passed.000009)
+				v.Global.sLocn.Set(v.Passed.000011)
+				f.Intrinsic.Control.CallSub(VerifyPartStatus, "Screen", "PO")
+			f.Intrinsic.Control.Case(37608)
+				'37608 - ECN Post Save
+				f.Intrinsic.Control.CallSub(UpdatePartFromECN)
+			f.Intrinsic.Control.Case(10120)
+				'10120 - Inventory Populate
+				F.Intrinsic.UI.ChangeCallerProperty(V.Passed.000027,"LOCK",1)
+				F.Intrinsic.UI.ChangeCallerProperty(V.Passed.000028,"LOCK",1)
+			f.Intrinsic.Control.Case(10170)
+				f.Intrinsic.Control.CallSub(SetPartAsActive)
+		f.Intrinsic.Control.EndSelect
+	f.Intrinsic.Control.Catch
+		f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+	f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.loadPictureLogo.Start
+f.Intrinsic.Control.Try
+	'Load the Logo at the top of dash and the Icon
+	v.Local.sIcon.Declare(String)
+	v.Local.sLogo.Declare(String)
+	
+	f.Intrinsic.String.Build("{0}\ART\gss2.ico", v.Caller.GlobalDir, v.Local.sIcon)
+	f.Intrinsic.String.Build("{0}\ART\GCG_5633_Warning.png", v.Caller.GlobalDir, v.Local.sLogo)
+	gui.f_Warning.pic1.Picture(v.Local.sLogo)
+	gui.f_Warning..Icon(v.Local.sIcon)
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.loadPictureLogo.End
+
+Program.Sub.cmdOK_Click.Start
+	F.Intrinsic.Control.End
+Program.Sub.cmdOK_Click.End
+
+Program.Sub.f_Warning_UnLoad.Start
+	F.Intrinsic.Control.End
+Program.Sub.f_Warning_UnLoad.End
+
+Program.Sub.ErrorMsg.Start
+v.Local.sError.Declare
+
+'Closes ODBC connection, default to connection : "con"
+f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+	f.ODBC.Connection!con.Close
+f.Intrinsic.Control.EndIf
+
+'Generic Error message.
+f.Intrinsic.String.Build("Project GCG_5633_CustomMessaging.g2u {0}{0}Subroutine: {1}{0}Error: {2} with Description: {3}", v.Ambient.NewLine, v.Args.CurrentSub, v.Ambient.ErrorNumber, v.Ambient.ErrorDescription, v.Local.sError)
+f.Intrinsic.UI.Msgbox(v.Local.sError)
+Program.Sub.ErrorMsg.End
+
+Program.Sub.UpdatePartFromECN.Start
+	f.Intrinsic.Control.Try
+		v.Local.sPart.Declare(string)
+		v.Local.sRev.Declare(string)
+		v.Local.sLocn.Declare(string)
+		v.Local.sStatus.Declare(string)
+		v.Local.sCode.Declare(string)
+		v.Local.sSQL.Declare(string)
+		v.Local.sECN.Declare(string)
+		v.Local.iCnt.Declare(long)
+		
+		'Get part, status, and code from the ECN (ecn_header, eng_chg_part tables)
+		f.Intrinsic.String.LPad(v.passed.000056,"0",8,v.Local.sECN)
+		f.Intrinsic.String.Build("select a.part_17 as Part, a.part_rev, a.locn, a.new_part, a.new_locn, b.user_t01_value as Status, b.user_t02_value as Code from v_eng_chg_part as a inner join v_ecn_header as b on a.number=b.ecn_number where b.ecn_number='{0}';",v.Local.sECN,v.Local.sSQL)
+		f.ODBC.Connection!con.opencompanyconnection
+		f.Data.DataTable.CreateFromSQL("dtECN","con",v.Local.sSQL)
+		
+		f.Intrinsic.Control.If(v.DataTable.dtECN.RowCount,>,0)
+			'Update part fields
+			f.Intrinsic.String.UCase(v.DataTable.dtECN(0).Status!FieldValTrim,v.Local.sStatus)
+			f.Intrinsic.String.UCase(v.DataTable.dtECN(0).Code!FieldValTrim,v.Local.sCode)
+			
+			f.Intrinsic.Control.For(v.Local.iCnt,0,v.DataTable.dtECN.RowCount--,1)
+'				f.Intrinsic.Control.If(v.DataTable.dtECN(v.Local.iCnt).New_Part!FieldValTrim,=,"")
+					v.Local.sPart.Set(v.DataTable.dtECN(v.Local.iCnt).Part!FieldValTrim)
+					v.Local.sRev.Set(v.DataTable.dtECN(v.Local.iCnt).Part_Rev!FieldValTrim)
+					f.Intrinsic.String.RPad(v.Local.sPart," ",17,v.Local.sPart)
+					f.Intrinsic.String.Build("{0}{1}",v.Local.sPart,v.Local.sRev,v.Local.sPart)
+					v.Local.sLocn.Set(v.DataTable.dtECN(v.Local.iCnt).Locn!FieldValTrim)
+'				f.Intrinsic.Control.Else
+'					v.Local.sPart.Set(v.DataTable.dtECN(v.Local.iCnt).New_Part!FieldValTrim)
+'					v.Local.sLocn.Set(v.DataTable.dtECN(v.Local.iCnt).New_Locn!FieldValTrim)
+'				f.Intrinsic.Control.EndIf
+				
+				F.Intrinsic.String.Trim(V.Local.sPart,V.Local.sPart)
+				f.Intrinsic.String.Build("update inventory_mst2 set text_info1='{0}', text_info2='{1}' where part='{2}' and location='{3}';", v.Local.sStatus,v.Local.sCode,v.Local.sPart,v.Local.sLocn,v.Local.sSQL)
+				f.ODBC.Connection!con.execute(v.Local.sSQL)
+				
+			f.Intrinsic.Control.Next(v.Local.iCnt)
+		f.Intrinsic.Control.EndIf
+		
+		f.ODBC.Connection!con.close
+	f.Intrinsic.Control.Catch
+		f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+	f.Intrinsic.Control.EndTry
+Program.Sub.UpdatePartFromECN.End
+
+Program.Sub.VerifyPartStatus.Start
+	f.Intrinsic.Control.Try
+		v.Local.sSQL.Declare(string)
+		V.Local.bShow.Declare(boolean,False)
+		v.Local.sPartPrefix.Declare(string)
+		
+		'If the part has a status of Slow Moving, show warning if code matches supplied arg:
+		'(ARG=PO or ARG=QTE) and status=Slow Moving
+		'ARG=SO and part begins with FG
+		'ARG=BOM and (status=Slow Moving or RPO)
+		
+		f.Intrinsic.String.Build("select UPPER(ltrim(rtrim(text_info1))) AS STATUS from inventory_mst2 where part like '{0}%{1}' and location='{2}';", v.global.sPart,v.global.sRev,v.global.sLocn,v.Local.sSQL)
+		f.ODBC.Connection!con.opencompanyconnection
+		f.Data.DataTable.CreateFromSQL("dtPartInfo","con",v.Local.sSQL)
+		f.ODBC.Connection!con.Close
+		f.Intrinsic.Control.If(v.DataTable.dtPartInfo.RowCount,>,0)
+			f.Intrinsic.Control.SelectCase(v.Args.Screen)
+				f.Intrinsic.Control.Caseany("PO")
+					f.Intrinsic.Control.If(v.DataTable.dtPartInfo(0).STATUS!FieldValTrim,=,"SLOW MOVING")
+						v.Local.bShow.Set(True)
+					f.Intrinsic.Control.EndIf
+				f.Intrinsic.Control.Caseany("SO","QTE")
+					f.Intrinsic.String.Left(v.Global.sPart,2,v.Local.sPartPrefix)
+					f.Intrinsic.Control.If(v.Local.sPartPrefix,=,"FG")
+					f.Intrinsic.Control.AndIf(v.DataTable.dtPartInfo(0).STATUS!FieldValTrim,=,"SLOW MOVING")
+						v.Local.bShow.Set(True)
+					f.Intrinsic.Control.EndIf
+				f.Intrinsic.Control.Case("BOM")
+					f.Intrinsic.Control.If(v.DataTable.dtPartInfo(0).STATUS!FieldValTrim,=,"SLOW MOVING")
+						v.Local.bShow.Set(True)
+					f.Intrinsic.Control.EndIf
+					f.Intrinsic.Control.If(v.DataTable.dtPartInfo(0).STATUS!FieldValTrim,=,"RPO")
+						v.Local.bShow.Set(True)
+					f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.EndSelect
+			
+			f.Intrinsic.Control.If(v.Local.bShow)
+				gui.f_Warning..Show
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.Catch
+		f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+	f.Intrinsic.Control.EndTrY
+Program.Sub.VerifyPartStatus.End
+
+Program.Sub.SetPartAsActive.Start
+	'If part does not exist, it is a new part, which means its default status should be Active
+	v.Local.sSQL.Declare(string)
+	v.Local.sRet.Declare(string)
+	
+	f.Intrinsic.String.Build("select text_info1, FLAG_INACTIVE from v_inventory_all where part like '{0}%{1}' and location='{2}';",v.Passed.000007,v.Passed.000008,v.Passed.000009,v.Local.sSQL)
+	f.ODBC.Connection!con.opencompanyconnection
+	f.ODBC.Connection!con.OpenLocalRecordsetRO("rstCheck",V.Local.sSQL)
+	
+	F.Intrinsic.Control.If(V.ODBC.con!rstCheck.EOF,<>,True)
+		F.Intrinsic.Control.If(V.ODBC.con!rstCheck.FieldValTrim!text_info1,=,"")
+			F.Intrinsic.Control.If(V.ODBC.con!rstCheck.FieldValTrim!FLAG_INACTIVE,=,"Y")
+				V.Passed.000027.Set("Inactive")
+			F.Intrinsic.Control.Else
+				V.Passed.000027.Set("Active")
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.Else
+			F.Intrinsic.Control.If(V.ODBC.con!rstCheck.FieldValTrim!FLAG_INACTIVE,=,"Y")
+				V.Passed.000027.Set("Inactive")
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Else
+		v.Passed.000027.Set("Active")
+	F.Intrinsic.Control.EndIf
+	
+	F.ODBC.con!rstCheck.Close
+	F.ODBC.Connection!con.Close
+Program.Sub.SetPartAsActive.End
